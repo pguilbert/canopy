@@ -1,0 +1,15 @@
+---
+source: tests/snapshot_cases.rs
+expression: snapshot
+---
+*   ddef24772cc854365380140683db80904e8e86a2 c65f0a9c4d150ebc8b593a6c1387fe13ae6d3965 7d7bc83e0ef08e3a6f140c21371f37ab4c56bb26 Merge other into integration
+|\  
+| * 7d7bc83e0ef08e3a6f140c21371f37ab4c56bb26 68b72a6c8eaff6e254a92a19fac589afe63b926a other
+* |   c65f0a9c4d150ebc8b593a6c1387fe13ae6d3965 68b72a6c8eaff6e254a92a19fac589afe63b926a bd73e12a5b589cfcd103109e1d50114a27c15138 Merge bd73e12a5b589cfcd103109e1d50114a27c15138 into integration
+|\ \  
+| |/  
+|/|   
+| * bd73e12a5b589cfcd103109e1d50114a27c15138 453f44832f795c0b656398d2e334d0cb444b33be feature two
+| * 453f44832f795c0b656398d2e334d0cb444b33be 68b72a6c8eaff6e254a92a19fac589afe63b926a feature one
+|/  
+* 68b72a6c8eaff6e254a92a19fac589afe63b926a  base

@@ -1,0 +1,14 @@
+---
+source: tests/snapshot_cases.rs
+expression: snapshot
+---
+*   cc9d41d0bc2eb978fc8c72350dfaee1ac7356c75 cdf57fa0d233858e0e8ed68b429addcdd35d861a 3305ad5178833d60bfd647074a3b13e77584bc2f Merge feature-c into integration
+|\  
+| * 3305ad5178833d60bfd647074a3b13e77584bc2f 68b72a6c8eaff6e254a92a19fac589afe63b926a feature c
+* |   cdf57fa0d233858e0e8ed68b429addcdd35d861a 68b72a6c8eaff6e254a92a19fac589afe63b926a 623627942fab791641c441e18013050719cec4d5 Merge feature-a into integration
+|\ \  
+| |/  
+|/|   
+| * 623627942fab791641c441e18013050719cec4d5 68b72a6c8eaff6e254a92a19fac589afe63b926a feature a
+|/  
+* 68b72a6c8eaff6e254a92a19fac589afe63b926a  base
