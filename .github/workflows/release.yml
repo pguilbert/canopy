@@ -24,12 +24,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install action dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build GitHub Action bundle
+        run: pnpm --filter @canopy/github-action build
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --locked --target "${{ matrix.target }}"
+        run: cargo build --release --locked -p canopy --target "${{ matrix.target }}"
 
       - name: Package archive
         run: tar -C "target/${{ matrix.target }}/release" -czf "canopy-${{ matrix.target }}.tar.gz" canopy

@@ -33,7 +33,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build canopy
-        run: cargo build --locked
+        run: cargo build --locked -p canopy
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build GitHub Action bundle
+        run: pnpm --filter @canopy/github-action build
 
       - uses: ./
         with:

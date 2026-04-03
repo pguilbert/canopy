@@ -1,0 +1,13 @@
+{
+  "name": "canopy",
+  "private": true,
+  "scripts": {
+    "build": "cargo build --locked -p canopy && pnpm --filter @canopy/github-action build",
+    "build:action": "pnpm --filter @canopy/github-action build",
+    "build:cli": "cargo build --locked -p canopy",
+    "test": "cargo test --locked -p canopy && pnpm --filter @canopy/github-action test",
+    "test:action": "pnpm --filter @canopy/github-action test",
+    "test:cli": "cargo test --locked -p canopy"
+  },
+  "packageManager": "pnpm@10.10.0"
+}

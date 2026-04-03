@@ -1,15 +1,34 @@
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
+import { mkdtemp, chmod, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 
-function getInput(name, fallback = "") {
+type RunOptions = Omit<SpawnSyncOptionsWithStringEncoding, "encoding">;
+
+type PullRequest = {
+  number: number;
+  base: { ref: string };
+  head: {
+    ref: string;
+    repo: { full_name: string };
+  };
+  labels?: Array<{ name?: string }>;
+};
+
+type PullRequestEvent = {
+  action?: string;
+  label?: { name?: string };
+  pull_request?: PullRequest;
+  ref?: string;
+};
+
+function getInput(name: string, fallback = ""): string {
   const key = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
   const value = process.env[key];
   return value === undefined || value === "" ? fallback : value;
 }
 
-function getRequiredEnv(name) {
+function getRequiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`${name} is required`);
@@ -17,15 +36,15 @@ function getRequiredEnv(name) {
   return value;
 }
 
-function log(message) {
+function log(message: string): void {
   process.stdout.write(`${message}\n`);
 }
 
-function fail(message) {
+function fail(message: string): void {
   process.stderr.write(`${message}\n`);
 }
 
-function run(command, args, options = {}) {
+function run(command: string, args: string[], options: RunOptions = {}): string {
   const printable = [command, ...args].join(" ");
   log(`$ ${printable}`);
   const result = spawnSync(command, args, {
@@ -41,12 +60,14 @@ function run(command, args, options = {}) {
     process.stderr.write(result.stderr);
   }
   if (result.status !== 0) {
-    throw new Error(`command failed: ${printable}`);
+    throw new Error(
+      `command failed: ${printable}\nstdout:\n${result.stdout.trimEnd()}\nstderr:\n${result.stderr.trimEnd()}`,
+    );
   }
   return result.stdout.trim();
 }
 
-async function githubRequest(token, requestPath) {
+async function githubRequest<T>(token: string, requestPath: string): Promise<T> {
   const response = await fetch(`https://api.github.com${requestPath}`, {
     headers: {
       Accept: "application/vnd.github+json",
@@ -60,13 +81,13 @@ async function githubRequest(token, requestPath) {
     throw new Error(`GitHub API request failed (${response.status}): ${requestPath}`);
   }
 
-  return response.json();
+  return (await response.json()) as T;
 }
 
-async function listOpenPullRequests(token, repository) {
-  const pulls = [];
+async function listOpenPullRequests(token: string, repository: string): Promise<PullRequest[]> {
+  const pulls: PullRequest[] = [];
   for (let page = 1; ; page += 1) {
-    const batch = await githubRequest(
+    const batch = await githubRequest<PullRequest[]>(
       token,
       `/repos/${repository}/pulls?state=open&per_page=100&page=${page}`,
     );
@@ -77,45 +98,52 @@ async function listOpenPullRequests(token, repository) {
   }
 }
 
-function unique(values) {
+function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function impactedLabelsFromEvent(eventName, payload, openPrs, labelPrefix) {
+function impactedLabelsFromEvent(
+  eventName: string,
+  payload: PullRequestEvent,
+  openPrs: PullRequest[],
+  labelPrefix: string,
+): string[] {
   if (eventName === "push") {
-    const pushedRef = payload.ref || "";
+    const pushedRef = payload.ref ?? "";
     const pushedBranch = pushedRef.replace(/^refs\/heads\//, "");
     return unique(
       openPrs
         .filter((pr) => pr.base.ref === pushedBranch)
-        .flatMap((pr) => (pr.labels || []).map((label) => label.name))
-        .filter((name) => typeof name === "string" && name.startsWith(labelPrefix)),
+        .flatMap((pr) => (pr.labels ?? []).map((label) => label.name))
+        .filter((name): name is string => typeof name === "string" && name.startsWith(labelPrefix)),
     ).sort();
   }
 
   if (payload.action === "labeled" || payload.action === "unlabeled") {
-    const labelName = payload.label && payload.label.name;
+    const labelName = payload.label?.name;
     return typeof labelName === "string" && labelName.startsWith(labelPrefix) ? [labelName] : [];
   }
 
-  const prLabels = ((payload.pull_request || {}).labels || []).map((label) => label.name);
+  const prLabels = (payload.pull_request?.labels ?? []).map((label) => label.name);
   return unique(
-    prLabels.filter((name) => typeof name === "string" && name.startsWith(labelPrefix)),
+    prLabels.filter(
+      (name): name is string => typeof name === "string" && name.startsWith(labelPrefix),
+    ),
   ).sort();
 }
 
-function selectPrsForLabel(openPrs, label) {
+function selectPrsForLabel(openPrs: PullRequest[], label: string): PullRequest[] {
   return openPrs
-    .filter((pr) => (pr.labels || []).some((candidate) => candidate.name === label))
+    .filter((pr) => (pr.labels ?? []).some((candidate) => candidate.name === label))
     .sort((left, right) => left.number - right.number);
 }
 
-function resolveReleaseTarget() {
-  const platforms = {
+function resolveReleaseTarget(): string {
+  const platforms: Record<string, string> = {
     linux: "unknown-linux-gnu",
     darwin: "apple-darwin",
   };
-  const architectures = {
+  const architectures: Record<string, string> = {
     x64: "x86_64",
     arm64: "aarch64",
   };
@@ -133,7 +161,7 @@ function resolveReleaseTarget() {
   return `${archTarget}-${osTarget}`;
 }
 
-async function downloadFile(url, destination) {
+async function downloadFile(url: string, destination: string): Promise<void> {
   const response = await fetch(url, {
     headers: {
       "User-Agent": "pguilbert-canopy-action",
@@ -145,10 +173,10 @@ async function downloadFile(url, destination) {
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(destination, buffer);
+  await writeFile(destination, buffer);
 }
 
-async function ensureCanopyBinary(version) {
+async function ensureCanopyBinary(version: string): Promise<string> {
   const target = resolveReleaseTarget();
   const actionRepository = process.env.GITHUB_ACTION_REPOSITORY || "pguilbert/canopy";
   const archiveName = `canopy-${target}.tar.gz`;
@@ -157,17 +185,17 @@ async function ensureCanopyBinary(version) {
       ? `https://github.com/${actionRepository}/releases/latest/download/${archiveName}`
       : `https://github.com/${actionRepository}/releases/download/${version}/${archiveName}`;
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "canopy-action-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "canopy-action-"));
   const archivePath = path.join(tempDir, archiveName);
   const binaryPath = path.join(tempDir, "canopy");
   log(`Downloading canopy from ${releaseUrl}`);
   await downloadFile(releaseUrl, archivePath);
   run("tar", ["-xzf", archivePath, "-C", tempDir]);
-  await fs.chmod(binaryPath, 0o755);
+  await chmod(binaryPath, 0o755);
   return binaryPath;
 }
 
-async function resolveCanopyBinary() {
+async function resolveCanopyBinary(): Promise<string> {
   const configuredPath = getInput("canopy-path");
   if (configuredPath) {
     return path.resolve(configuredPath);
@@ -175,7 +203,7 @@ async function resolveCanopyBinary() {
   return ensureCanopyBinary(getInput("canopy-version", "latest"));
 }
 
-function validatePrGroup(prs, repository, label) {
+function validatePrGroup(prs: PullRequest[], repository: string, label: string): string {
   const foreignPrs = prs
     .filter((pr) => pr.head.repo.full_name !== repository)
     .map((pr) => pr.number);
@@ -190,10 +218,31 @@ function validatePrGroup(prs, repository, label) {
     throw new Error(`label ${label} spans multiple base branches: ${bases.join(", ")}`);
   }
 
-  return bases[0];
+  return bases[0] as string;
 }
 
-function rebuildBranch(canopyBinary, label, labelPrefix, branchPrefix, repository, prs) {
+function deleteRemoteBranch(targetBranch: string): void {
+  log(`Deleting remote branch ${targetBranch}`);
+  try {
+    run("git", ["push", "origin", "--delete", targetBranch]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("remote ref does not exist") || message.includes("unable to delete")) {
+      log(`Remote branch ${targetBranch} does not exist; skipping delete`);
+      return;
+    }
+    throw error;
+  }
+}
+
+function rebuildBranch(
+  canopyBinary: string,
+  label: string,
+  labelPrefix: string,
+  branchPrefix: string,
+  repository: string,
+  prs: PullRequest[],
+): void {
   const suffix = label.slice(labelPrefix.length);
   const targetBranch = `${branchPrefix}${suffix}`;
   const baseRef = validatePrGroup(prs, repository, label);
@@ -213,7 +262,7 @@ function rebuildBranch(canopyBinary, label, labelPrefix, branchPrefix, repositor
   ]);
 }
 
-async function main() {
+async function main(): Promise<void> {
   try {
     const token = getInput("github-token", process.env.GITHUB_TOKEN || "");
     if (!token) {
@@ -225,7 +274,7 @@ async function main() {
     const branchPrefix = getInput("branch-prefix", "canopy-");
     const eventName = getRequiredEnv("GITHUB_EVENT_NAME");
     const eventPath = getRequiredEnv("GITHUB_EVENT_PATH");
-    const payload = JSON.parse(await fs.readFile(eventPath, "utf8"));
+    const payload = JSON.parse(await readFile(eventPath, "utf8")) as PullRequestEvent;
     const openPrs = await listOpenPullRequests(token, repository);
     const impactedLabels = impactedLabelsFromEvent(eventName, payload, openPrs, labelPrefix);
 
@@ -249,9 +298,9 @@ async function main() {
       rebuildBranch(canopyBinary, label, labelPrefix, branchPrefix, repository, prs);
     }
   } catch (error) {
-    fail(`error: ${error.message}`);
+    fail(`error: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }
 
-main();
+void main();

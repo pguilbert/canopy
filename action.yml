@@ -21,4 +21,4 @@ inputs:
     required: false
 runs:
   using: "node24"
-  main: github-action/index.js
+  main: packages/github-action/dist/index.js

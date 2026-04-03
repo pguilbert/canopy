@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use gix::config::tree::User;
 use gix::hash::ObjectId;
