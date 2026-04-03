@@ -179,10 +179,6 @@ async function resolveCanopyBinary() {
   return ensureCanopyBinary(getInput("canopy-version", "latest"));
 }
 
-function verifyRepositoryCheckout() {
-  run("git", ["rev-parse", "--show-toplevel"]);
-}
-
 function getGitConfig(key) {
   const result = spawnSync("git", ["config", "--get", key], {
     stdio: "pipe",
@@ -273,8 +269,6 @@ async function main() {
     if (!token) {
       throw new Error("github-token input is required");
     }
-
-    verifyRepositoryCheckout();
 
     const repository = getInput("repository", getRequiredEnv("GITHUB_REPOSITORY"));
     const labelPrefix = getInput("label-prefix", "canopy/");
