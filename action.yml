@@ -4,9 +4,6 @@ inputs:
   github-token:
     description: GitHub token used to read PRs and push branch updates.
     required: false
-  repository:
-    description: Repository to manage, in owner/name format.
-    required: false
   label-prefix:
     description: Label prefix used to select PR groups.
     required: false
@@ -22,10 +19,6 @@ inputs:
   canopy-path:
     description: Optional path to an existing canopy binary. Skips release download when set.
     required: false
-  delete-when-empty:
-    description: Delete the generated branch when no open PRs remain for a label.
-    required: false
-    default: "true"
 runs:
   using: "node24"
   main: github-action/index.js

@@ -17,10 +17,6 @@ function getRequiredEnv(name) {
   return value;
 }
 
-function parseBoolean(value) {
-  return /^(1|true|yes|on)$/i.test(value.trim());
-}
-
 function log(message) {
   process.stdout.write(`${message}\n`);
 }
@@ -179,22 +175,6 @@ async function resolveCanopyBinary() {
   return ensureCanopyBinary(getInput("canopy-version", "latest"));
 }
 
-function remoteBranchExists(branch) {
-  const result = spawnSync("git", ["ls-remote", "--exit-code", "--heads", "origin", branch], {
-    stdio: "ignore",
-  });
-  return result.status === 0;
-}
-
-function deleteRemoteBranch(branch) {
-  if (!remoteBranchExists(branch)) {
-    log(`Skipping delete for ${branch} because it does not exist on origin`);
-    return;
-  }
-  log(`Deleting ${branch} because no open PRs still use its label`);
-  run("git", ["push", "origin", "--delete", branch]);
-}
-
 function validatePrGroup(prs, repository, label) {
   const foreignPrs = prs
     .filter((pr) => pr.head.repo.full_name !== repository)
@@ -240,10 +220,9 @@ async function main() {
       throw new Error("github-token input is required");
     }
 
-    const repository = getInput("repository", getRequiredEnv("GITHUB_REPOSITORY"));
+    const repository = getRequiredEnv("GITHUB_REPOSITORY");
     const labelPrefix = getInput("label-prefix", "canopy/");
     const branchPrefix = getInput("branch-prefix", "canopy-");
-    const deleteWhenEmpty = parseBoolean(getInput("delete-when-empty", "true"));
     const eventName = getRequiredEnv("GITHUB_EVENT_NAME");
     const eventPath = getRequiredEnv("GITHUB_EVENT_PATH");
     const payload = JSON.parse(await fs.readFile(eventPath, "utf8"));
@@ -263,11 +242,7 @@ async function main() {
       const targetBranch = `${branchPrefix}${suffix}`;
 
       if (prs.length === 0) {
-        if (deleteWhenEmpty) {
-          deleteRemoteBranch(targetBranch);
-        } else {
-          log(`Skipping ${targetBranch} because no open PRs remain for ${label}`);
-        }
+        deleteRemoteBranch(targetBranch);
         continue;
       }
 
