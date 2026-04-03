@@ -88,10 +88,43 @@ If the target branch already exists, re-run with `--force` to replace it:
 cargo run -- branch --force integration feature-a feature-b
 ```
 
-## GitHub PR Labels
+## GitHub Action
 
-The repository includes a GitHub Actions workflow that keeps synthetic branches in sync with PR
-labels named `canopy/XXXX`.
+Canopy also ships as a GitHub Action so other repositories can keep synthetic branches in sync
+with PR labels named `canopy/XXXX`.
+
+Add this workflow to the consuming repository:
+
+```yaml
+name: Sync Canopy Branches
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited, closed]
+  push:
+    branches-ignore:
+      - "canopy-*"
+    tags-ignore:
+      - "**"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pguilbert/canopy@v0
+        with:
+          github-token: ${{ github.token }}
+```
+
+Behavior:
 
 - adding `canopy/XXXX` to one or more same-repository PRs rebuilds `canopy-XXXX`
 - removing the label rebuilds the branch from the remaining labeled PRs
@@ -99,8 +132,20 @@ labels named `canopy/XXXX`.
 - changing a labeled PR's base branch rebuilds `canopy-XXXX` from the new base
 - pushes to a base branch also rebuild matching `canopy-*` branches
 
-All open PRs sharing a given `canopy/XXXX` label must target the same base branch. If they do
-not, the workflow fails for that label instead of guessing which base to use.
+Supported inputs:
+
+- `github-token`: token used for GitHub API reads and branch pushes
+- `repository`: override the target repository, defaults to the current repository
+- `label-prefix`: defaults to `canopy/`
+- `branch-prefix`: defaults to `canopy-`
+- `canopy-version`: release tag to download, defaults to `latest`
+- `delete-when-empty`: defaults to `true`
+
+`canopy-path` is also available for local dogfooding and tests when you want the action to use an
+already-built `canopy` binary instead of downloading a release.
+
+All open PRs sharing a given `canopy/XXXX` label must target the same base branch. If they do not,
+the action fails for that label instead of guessing which base to use.
 
 ## Output
 

@@ -1,0 +1,31 @@
+name: Canopy
+description: Keep synthetic canopy branches in sync with pull request labels.
+inputs:
+  github-token:
+    description: GitHub token used to read PRs and push branch updates.
+    required: false
+  repository:
+    description: Repository to manage, in owner/name format.
+    required: false
+  label-prefix:
+    description: Label prefix used to select PR groups.
+    required: false
+    default: canopy/
+  branch-prefix:
+    description: Branch prefix used for generated integration branches.
+    required: false
+    default: canopy-
+  canopy-version:
+    description: Released canopy version to download, or latest.
+    required: false
+    default: latest
+  canopy-path:
+    description: Optional path to an existing canopy binary. Skips release download when set.
+    required: false
+  delete-when-empty:
+    description: Delete the generated branch when no open PRs remain for a label.
+    required: false
+    default: "true"
+runs:
+  using: node20
+  main: github-action/index.js
