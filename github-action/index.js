@@ -218,24 +218,19 @@ function rebuildBranch(canopyBinary, label, labelPrefix, branchPrefix, repositor
   const targetBranch = `${branchPrefix}${suffix}`;
   const baseRef = validatePrGroup(prs, repository, label);
   const headRefs = unique(prs.map((pr) => pr.head.ref));
-  const fetchSpecs = [`+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`];
-
-  for (const headRef of headRefs) {
-    fetchSpecs.push(`+refs/heads/${headRef}:refs/remotes/origin/${headRef}`);
-  }
 
   log(`Rebuilding ${targetBranch} from base ${baseRef} for label ${label}`);
-  run("git", ["fetch", "--no-tags", "origin", ...fetchSpecs]);
-  const tipRefs = headRefs.map((headRef) => `refs/remotes/origin/${headRef}`);
   run(canopyBinary, [
     "branch",
+    "--remote",
+    "origin",
+    "--push",
     "--force",
     "--base",
-    `refs/remotes/origin/${baseRef}`,
+    baseRef,
     targetBranch,
-    ...tipRefs,
+    ...headRefs,
   ]);
-  run("git", ["push", "origin", `+refs/heads/${targetBranch}:refs/heads/${targetBranch}`]);
 }
 
 async function main() {

@@ -1,6 +1,6 @@
 mod support;
 
-use support::Fixture;
+use support::{Fixture, RemoteFixture};
 
 #[test]
 fn creates_branch_and_deduplicates_ancestor_tips() {
@@ -171,4 +171,58 @@ fn updates_existing_target_with_force_from_explicit_base_branch() {
     assert!(stdout.contains("final branch update: replaced integration ->"));
     repo.assert_branch_file("integration", "release.txt", "release\n");
     repo.assert_branch_file("integration", "feature.txt", "feature\n");
+}
+
+#[test]
+fn fetches_remote_branches_when_remote_is_provided() {
+    let repo = RemoteFixture::sample_repo();
+
+    let output = repo.canopy(&[
+        "branch",
+        "--remote",
+        "origin",
+        "--base",
+        "main",
+        "integration",
+        "linear-2",
+        "other",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("fetching refs from remote: origin"));
+    assert!(stdout.contains("selected base: refs/remotes/origin/main"));
+    assert!(stdout.contains("  refs/remotes/origin/linear-2 ->"));
+    assert!(stdout.contains("  refs/remotes/origin/other ->"));
+    repo.assert_branch_file("integration", "story.txt", "feature two\n");
+    repo.assert_branch_file("integration", "other.txt", "other\n");
+}
+
+#[test]
+fn pushes_target_branch_when_remote_push_is_requested() {
+    let repo = RemoteFixture::sample_repo();
+
+    let output = repo.canopy(&[
+        "branch",
+        "--remote",
+        "origin",
+        "--push",
+        "--base",
+        "main",
+        "integration",
+        "linear-2",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("pushing branch to remote: origin/integration"));
+    repo.assert_remote_branch_exists("integration");
 }
