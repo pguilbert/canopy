@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use gix::config::tree::User;
 use gix::hash::ObjectId;
 use gix::refs::transaction::PreviousValue;
@@ -18,18 +18,21 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Branch {
-        #[arg(long)]
-        force: bool,
-        #[arg(long)]
-        base: Option<String>,
-        #[arg(long)]
-        remote: Option<String>,
-        #[arg(long)]
-        push: bool,
-        target_branch: String,
-        tips: Vec<String>,
-    },
+    Branch(BranchArgs),
+}
+
+#[derive(Args, Debug)]
+struct BranchArgs {
+    #[arg(long)]
+    force: bool,
+    #[arg(long)]
+    base: Option<String>,
+    #[arg(long)]
+    remote: Option<String>,
+    #[arg(long)]
+    push: bool,
+    target_branch: String,
+    tips: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +59,13 @@ struct RemoteBranchInput {
     local_ref: String,
 }
 
+#[derive(Debug)]
+struct MergeSummary {
+    head: ObjectId,
+    successful: Vec<ResolvedTip>,
+    failed: Vec<ResolvedTip>,
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err:#}");
@@ -66,93 +76,120 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Branch {
-            force,
-            base,
-            remote,
-            push,
-            target_branch,
-            tips,
-        } => run_branch(
-            force,
-            base.as_deref(),
-            remote.as_deref(),
-            push,
-            &target_branch,
-            &tips,
-        ),
+        Commands::Branch(args) => run_branch(&args),
     }
 }
 
-fn run_branch(
-    force: bool,
-    base: Option<&str>,
-    remote: Option<&str>,
-    push: bool,
-    target_branch: &str,
-    tips: &[String],
-) -> Result<()> {
-    if tips.is_empty() {
-        bail!("at least one tip is required");
-    }
+fn run_branch(args: &BranchArgs) -> Result<()> {
+    validate_branch_args(args)?;
 
-    if push && remote.is_none() {
-        bail!("--push requires --remote");
-    }
-
+    let remote = args.remote.as_deref();
+    let target_branch = args.target_branch.as_str();
     let cwd = std::env::current_dir().context("failed to read current directory")?;
     let mut repo = gix::discover(cwd).context("failed to discover git repository")?;
     ensure_commit_identity(&mut repo)?;
 
-    let (base, tips) = match remote {
-        Some(remote) => prepare_remote_refs(remote, base, tips)?,
-        None => (base.map(str::to_owned), tips.to_vec()),
-    };
-
+    let (base, tips) = resolve_branch_inputs(args)?;
     let target_ref = format!("refs/heads/{target_branch}");
-
-    let target_exists = repo
-        .try_find_reference(target_ref.as_str())
-        .context("failed to inspect target branch")?
-        .is_some();
-    if target_exists && !force {
+    let target_exists = target_branch_exists(&repo, &target_ref)?;
+    if target_exists && !args.force {
         bail!("target branch '{target_branch}' already exists; re-run with --force to replace it");
     }
 
-    let base_ref = match base.as_deref() {
+    let base_ref = select_base_ref(&repo, base.as_deref(), remote)?;
+    println!("target branch: {target_branch}");
+
+    let resolved_tips = resolve_tips(&repo, &tips)?;
+    print_tip_list("resolved tips", &resolved_tips);
+
+    let deduplicated_tips = deduplicate_tips(&repo, resolved_tips)?;
+    print_tip_list("deduplicated tips", &deduplicated_tips);
+
+    let merge_summary = merge_tips(&repo, base_ref.commit_id, target_branch, &deduplicated_tips)?;
+    print_merge_summary(&merge_summary);
+
+    update_target_branch(
+        &repo,
+        args.force,
+        &target_ref,
+        target_branch,
+        target_exists,
+        merge_summary.head,
+    )?;
+
+    if let Some(remote) = remote.filter(|_| args.push) {
+        push_branch(remote, target_branch)?;
+    }
+
+    Ok(())
+}
+
+fn validate_branch_args(args: &BranchArgs) -> Result<()> {
+    if args.tips.is_empty() {
+        bail!("at least one tip is required");
+    }
+
+    if args.push && args.remote.is_none() {
+        bail!("--push requires --remote");
+    }
+
+    Ok(())
+}
+
+fn resolve_branch_inputs(args: &BranchArgs) -> Result<(Option<String>, Vec<String>)> {
+    match args.remote.as_deref() {
+        Some(remote) => prepare_remote_refs(remote, args.base.as_deref(), &args.tips),
+        None => Ok((args.base.clone(), args.tips.clone())),
+    }
+}
+
+fn target_branch_exists(repo: &gix::Repository, target_ref: &str) -> Result<bool> {
+    Ok(repo
+        .try_find_reference(target_ref)
+        .context("failed to inspect target branch")?
+        .is_some())
+}
+
+fn select_base_ref(
+    repo: &gix::Repository,
+    base: Option<&str>,
+    remote: Option<&str>,
+) -> Result<BaseRef> {
+    match base {
         Some(base) => {
             let base_ref = resolve_base_ref(&repo, base)?;
             println!("selected base: {}", base_ref.name);
-            base_ref
+            Ok(base_ref)
         }
         None => {
             let default_branch = detect_default_branch(&repo, remote)?;
             println!("detected default branch: {}", default_branch.name);
-            BaseRef {
+            Ok(BaseRef {
                 name: default_branch.name,
                 commit_id: default_branch.commit_id,
-            }
+            })
         }
-    };
-    println!("target branch: {target_branch}");
+    }
+}
 
-    let resolved_tips = resolve_tips(&repo, &tips)?;
-    println!("resolved tips:");
-    for tip in &resolved_tips {
+fn print_tip_list(label: &str, tips: &[ResolvedTip]) {
+    println!("{label}:");
+    for tip in tips {
         println!("  {} -> {}", tip.input, tip.commit_id);
     }
+}
 
-    let deduplicated_tips = deduplicate_tips(&repo, resolved_tips)?;
-    println!("deduplicated tips:");
-    for tip in &deduplicated_tips {
-        println!("  {} -> {}", tip.input, tip.commit_id);
-    }
-
-    let mut current_commit = base_ref.commit_id;
+fn merge_tips(
+    repo: &gix::Repository,
+    base_commit: ObjectId,
+    target_branch: &str,
+    tips: &[ResolvedTip],
+) -> Result<MergeSummary> {
+    let mut current_commit = base_commit;
     let mut successful_merges = Vec::new();
     let mut failed_merges = Vec::new();
 
-    for tip in &deduplicated_tips {
+    for tip in tips {
         println!("attempting merge: {} ({})", tip.input, tip.commit_id);
         let merge_options: gix::merge::tree::Options = repo
             .tree_merge_options()
@@ -198,41 +235,48 @@ fn run_branch(
         successful_merges.push(tip.clone());
     }
 
-    if !successful_merges.is_empty() {
-        println!("successful merges:");
-        for tip in &successful_merges {
-            println!("  {} -> {}", tip.input, tip.commit_id);
-        }
+    Ok(MergeSummary {
+        head: current_commit,
+        successful: successful_merges,
+        failed: failed_merges,
+    })
+}
+
+fn print_merge_summary(summary: &MergeSummary) {
+    if !summary.successful.is_empty() {
+        print_tip_list("successful merges", &summary.successful);
     }
 
-    if !failed_merges.is_empty() {
-        println!("failed merges due to conflicts:");
-        for tip in &failed_merges {
-            println!("  {} -> {}", tip.input, tip.commit_id);
-        }
+    if !summary.failed.is_empty() {
+        print_tip_list("failed merges due to conflicts", &summary.failed);
     }
+}
 
+fn update_target_branch(
+    repo: &gix::Repository,
+    force: bool,
+    target_ref: &str,
+    target_branch: &str,
+    target_exists: bool,
+    commit_id: ObjectId,
+) -> Result<()> {
     let constraint = if force {
         PreviousValue::Any
     } else {
         PreviousValue::MustNotExist
     };
     repo.reference(
-        target_ref.as_str(),
-        current_commit,
+        target_ref,
+        commit_id,
         constraint,
         format!("canopy branch {target_branch}"),
     )
     .with_context(|| format!("failed to update target branch '{target_branch}'"))?;
 
     if target_exists {
-        println!("final branch update: replaced {target_branch} -> {current_commit}");
+        println!("final branch update: replaced {target_branch} -> {commit_id}");
     } else {
-        println!("final branch creation: created {target_branch} -> {current_commit}");
-    }
-
-    if let Some(remote) = remote.filter(|_| push) {
-        push_branch(remote, target_branch)?;
+        println!("final branch creation: created {target_branch} -> {commit_id}");
     }
 
     Ok(())
