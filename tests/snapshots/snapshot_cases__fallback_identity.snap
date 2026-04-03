@@ -1,0 +1,6 @@
+---
+source: tests/snapshot_cases.rs
+assertion_line: 50
+expression: snapshot
+---
+canopy[bot] <canopy@pguilbert.dev>|canopy[bot] <canopy@pguilbert.dev>

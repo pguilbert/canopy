@@ -14,6 +14,11 @@ fn conflict_skip_snapshot() {
     assert_case_snapshot("conflict_skip");
 }
 
+#[test]
+fn fallback_identity_snapshot() {
+    assert_case_snapshot("fallback_identity");
+}
+
 fn assert_case_snapshot(case_name: &str) {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let case_script = repo_root

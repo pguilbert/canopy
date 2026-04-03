@@ -1,7 +1,11 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use gix::config::tree::User;
 use gix::hash::ObjectId;
 use gix::refs::transaction::PreviousValue;
+
+const DEFAULT_COMMITTER_NAME: &str = "canopy[bot]";
+const DEFAULT_COMMITTER_EMAIL: &str = "canopy@pguilbert.dev";
 
 #[derive(Parser, Debug)]
 #[command(name = "canopy")]
@@ -66,7 +70,8 @@ fn run_branch(force: bool, base: Option<&str>, target_branch: &str, tips: &[Stri
     }
 
     let cwd = std::env::current_dir().context("failed to read current directory")?;
-    let repo = gix::discover(cwd).context("failed to discover git repository")?;
+    let mut repo = gix::discover(cwd).context("failed to discover git repository")?;
+    ensure_commit_identity(&mut repo)?;
     let target_ref = format!("refs/heads/{target_branch}");
 
     let target_exists = repo
@@ -303,6 +308,33 @@ fn deduplicate_tips(repo: &gix::Repository, tips: Vec<ResolvedTip>) -> Result<Ve
     }
 
     Ok(retained)
+}
+
+fn ensure_commit_identity(repo: &mut gix::Repository) -> Result<()> {
+    let config = repo.config_snapshot();
+    let missing_user_name = config.string(User::NAME).is_none();
+    let missing_user_email = config.string(User::EMAIL).is_none();
+
+    if !missing_user_name && !missing_user_email {
+        return Ok(());
+    }
+
+    let mut config = repo.config_snapshot_mut();
+    if missing_user_name {
+        config
+            .set_value(&User::NAME, DEFAULT_COMMITTER_NAME)
+            .context("failed to set fallback user.name")?;
+    }
+    if missing_user_email {
+        config
+            .set_value(&User::EMAIL, DEFAULT_COMMITTER_EMAIL)
+            .context("failed to set fallback user.email")?;
+    }
+    config
+        .commit()
+        .context("failed to apply fallback commit identity")?;
+
+    Ok(())
 }
 
 fn is_ancestor_or_same(repo: &gix::Repository, left: ObjectId, right: ObjectId) -> Result<bool> {

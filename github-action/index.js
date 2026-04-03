@@ -179,31 +179,6 @@ async function resolveCanopyBinary() {
   return ensureCanopyBinary(getInput("canopy-version", "latest"));
 }
 
-function getGitConfig(key) {
-  const result = spawnSync("git", ["config", "--get", key], {
-    stdio: "pipe",
-    encoding: "utf8",
-  });
-
-  if (result.status !== 0) {
-    return "";
-  }
-
-  return result.stdout.trim();
-}
-
-function ensureCommitterIdentity() {
-  const userName = getGitConfig("user.name");
-  if (!userName) {
-    run("git", ["config", "user.name", getInput("committer-name", "canopy[bot]")]);
-  }
-
-  const userEmail = getGitConfig("user.email");
-  if (!userEmail) {
-    run("git", ["config", "user.email", getInput("committer-email", "canopy@pguilbert.dev")]);
-  }
-}
-
 function remoteBranchExists(branch) {
   const result = spawnSync("git", ["ls-remote", "--exit-code", "--heads", "origin", branch], {
     stdio: "ignore",
@@ -285,7 +260,6 @@ async function main() {
       return;
     }
 
-    ensureCommitterIdentity();
     const canopyBinary = await resolveCanopyBinary();
 
     for (const label of impactedLabels) {
