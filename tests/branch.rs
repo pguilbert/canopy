@@ -115,3 +115,60 @@ fn updates_existing_target_with_force() {
     repo.assert_branch_exists("integration");
     repo.assert_branch_file("integration", "story.txt", "feature two\n");
 }
+
+#[test]
+fn starts_from_explicit_base_branch() {
+    let repo = Fixture::with_base_commit("story.txt", "main\n", "main");
+    repo.branch_from("release", "main");
+    repo.commit_file("release.txt", "release\n", "release base");
+
+    repo.branch_from("feature", "release");
+    repo.commit_file("feature.txt", "feature\n", "feature change");
+    repo.checkout("main");
+
+    let output = repo.canopy(&["branch", "--base", "release", "integration", "feature"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("selected base: release"));
+    repo.assert_branch_exists("integration");
+    repo.assert_branch_file("integration", "story.txt", "main\n");
+    repo.assert_branch_file("integration", "release.txt", "release\n");
+    repo.assert_branch_file("integration", "feature.txt", "feature\n");
+}
+
+#[test]
+fn updates_existing_target_with_force_from_explicit_base_branch() {
+    let repo = Fixture::with_base_commit("story.txt", "main\n", "main");
+    repo.branch_from("release", "main");
+    repo.commit_file("release.txt", "release\n", "release base");
+
+    repo.branch_from("feature", "release");
+    repo.commit_file("feature.txt", "feature\n", "feature change");
+    repo.checkout("main");
+    repo.git(&["branch", "integration"]);
+
+    let output = repo.canopy(&[
+        "branch",
+        "--force",
+        "--base",
+        "release",
+        "integration",
+        "feature",
+    ]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("selected base: release"));
+    assert!(stdout.contains("final branch update: replaced integration ->"));
+    repo.assert_branch_file("integration", "release.txt", "release\n");
+    repo.assert_branch_file("integration", "feature.txt", "feature\n");
+}

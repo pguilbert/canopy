@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use gix::hash::ObjectId;
 use gix::refs::transaction::PreviousValue;
@@ -16,6 +16,8 @@ enum Commands {
     Branch {
         #[arg(long)]
         force: bool,
+        #[arg(long)]
+        base: Option<String>,
         target_branch: String,
         tips: Vec<String>,
     },
@@ -23,6 +25,12 @@ enum Commands {
 
 #[derive(Clone, Debug)]
 struct DefaultBranch {
+    name: String,
+    commit_id: ObjectId,
+}
+
+#[derive(Clone, Debug)]
+struct BaseRef {
     name: String,
     commit_id: ObjectId,
 }
@@ -45,13 +53,14 @@ fn run() -> Result<()> {
     match cli.command {
         Commands::Branch {
             force,
+            base,
             target_branch,
             tips,
-        } => run_branch(force, &target_branch, &tips),
+        } => run_branch(force, base.as_deref(), &target_branch, &tips),
     }
 }
 
-fn run_branch(force: bool, target_branch: &str, tips: &[String]) -> Result<()> {
+fn run_branch(force: bool, base: Option<&str>, target_branch: &str, tips: &[String]) -> Result<()> {
     if tips.is_empty() {
         bail!("at least one tip is required");
     }
@@ -68,8 +77,21 @@ fn run_branch(force: bool, target_branch: &str, tips: &[String]) -> Result<()> {
         bail!("target branch '{target_branch}' already exists; re-run with --force to replace it");
     }
 
-    let default_branch = detect_default_branch(&repo)?;
-    println!("detected default branch: {}", default_branch.name);
+    let base_ref = match base {
+        Some(base) => {
+            let base_ref = resolve_base_ref(&repo, base)?;
+            println!("selected base: {}", base_ref.name);
+            base_ref
+        }
+        None => {
+            let default_branch = detect_default_branch(&repo)?;
+            println!("detected default branch: {}", default_branch.name);
+            BaseRef {
+                name: default_branch.name,
+                commit_id: default_branch.commit_id,
+            }
+        }
+    };
     println!("target branch: {target_branch}");
 
     let resolved_tips = resolve_tips(&repo, tips)?;
@@ -84,7 +106,7 @@ fn run_branch(force: bool, target_branch: &str, tips: &[String]) -> Result<()> {
         println!("  {} -> {}", tip.input, tip.commit_id);
     }
 
-    let mut current_commit = default_branch.commit_id;
+    let mut current_commit = base_ref.commit_id;
     let mut successful_merges = Vec::new();
     let mut failed_merges = Vec::new();
 
@@ -226,6 +248,22 @@ fn detect_default_branch(repo: &gix::Repository) -> Result<DefaultBranch> {
     }
 
     bail!("could not determine a default branch from local repository state")
+}
+
+fn resolve_base_ref(repo: &gix::Repository, base: &str) -> Result<BaseRef> {
+    let object = repo
+        .rev_parse_single(base)
+        .with_context(|| format!("failed to resolve base '{base}'"))?;
+    let commit = object
+        .object()
+        .with_context(|| format!("failed to load object for base '{base}'"))?
+        .peel_to_commit()
+        .with_context(|| format!("base '{base}' does not resolve to a commit"))?;
+
+    Ok(BaseRef {
+        name: base.to_owned(),
+        commit_id: commit.id,
+    })
 }
 
 fn resolve_tips(repo: &gix::Repository, tips: &[String]) -> Result<Vec<ResolvedTip>> {
