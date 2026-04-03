@@ -102,8 +102,10 @@ function impactedLabelsFromEvent(eventName, payload, openPrs, labelPrefix) {
     return typeof labelName === "string" && labelName.startsWith(labelPrefix) ? [labelName] : [];
   }
 
-  const prLabels = (((payload.pull_request || {}).labels) || []).map((label) => label.name);
-  return unique(prLabels.filter((name) => typeof name === "string" && name.startsWith(labelPrefix))).sort();
+  const prLabels = ((payload.pull_request || {}).labels || []).map((label) => label.name);
+  return unique(
+    prLabels.filter((name) => typeof name === "string" && name.startsWith(labelPrefix)),
+  ).sort();
 }
 
 function selectPrsForLabel(openPrs, label) {
@@ -198,7 +200,9 @@ function deleteRemoteBranch(branch) {
 }
 
 function validatePrGroup(prs, repository, label) {
-  const foreignPrs = prs.filter((pr) => pr.head.repo.full_name !== repository).map((pr) => pr.number);
+  const foreignPrs = prs
+    .filter((pr) => pr.head.repo.full_name !== repository)
+    .map((pr) => pr.number);
   if (foreignPrs.length > 0) {
     throw new Error(
       `label ${label} is applied to fork PRs (${foreignPrs.join(", ")}); only same-repository PRs are supported`,
