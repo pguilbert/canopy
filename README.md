@@ -76,11 +76,31 @@ Example:
 cargo run -- branch integration feature-a feature-b 1a2b3c4d
 ```
 
+To build from an explicit base instead of the detected default branch:
+
+```sh
+cargo run -- branch --base release integration feature-a feature-b
+```
+
 If the target branch already exists, re-run with `--force` to replace it:
 
 ```sh
 cargo run -- branch --force integration feature-a feature-b
 ```
+
+## GitHub PR Labels
+
+The repository includes a GitHub Actions workflow that keeps synthetic branches in sync with PR
+labels named `canopy/XXXX`.
+
+- adding `canopy/XXXX` to one or more same-repository PRs rebuilds `canopy-XXXX`
+- removing the label rebuilds the branch from the remaining labeled PRs
+- removing the label from the last open PR deletes `canopy-XXXX`
+- changing a labeled PR's base branch rebuilds `canopy-XXXX` from the new base
+- pushes to a base branch also rebuild matching `canopy-*` branches
+
+All open PRs sharing a given `canopy/XXXX` label must target the same base branch. If they do
+not, the workflow fails for that label instead of guessing which base to use.
 
 ## Output
 

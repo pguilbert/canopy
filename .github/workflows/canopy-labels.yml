@@ -1,0 +1,41 @@
+name: Sync Canopy Branches
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - edited
+      - closed
+  push:
+    branches-ignore:
+      - "canopy-*"
+    tags-ignore:
+      - "**"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build canopy
+        run: cargo build --locked
+
+      - name: Sync canopy branches
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .github/scripts/sync_canopy_branches.sh
